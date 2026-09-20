@@ -32,6 +32,7 @@ const team = ref([])
 const showGroupForm = ref(false)
 const groupForm = ref({ name: '', description: '' })
 const settings = ref({ pollingInterval: 30, notifications: true, compactMode: false })
+const demoCredentials = { email: 'test@example.com', password: 'password' }
 const navItems = [
   { label: 'Overview', icon: LayoutDashboard }, { label: 'Devices', icon: Server, count: 'devices' },
   { label: 'Alerts', icon: Bell, count: 'alerts', alert: true }, { label: 'Reports', icon: Activity },
@@ -246,16 +247,17 @@ async function loadDashboard() {
 }
 async function login() {
   loginError.value = ''
-  const response = await fetch('/api/auth/login', { method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/json' }, credentials: 'same-origin', body: JSON.stringify(loginForm.value) })
-  if (!response.ok) {
+  if (loginForm.value.email !== demoCredentials.email || loginForm.value.password !== demoCredentials.password) {
     loginError.value = 'Incorrect email or password.'
     return
   }
+  window.localStorage.setItem('signaldesk-demo-auth', 'true')
+  window.localStorage.setItem('signaldesk-demo-email', loginForm.value.email)
   authenticated.value = true
   await loadDashboard()
 }
 async function logout() {
-  await fetch('/api/auth/logout', { method: 'POST', credentials: 'same-origin' })
+  window.localStorage.removeItem('signaldesk-demo-auth')
   authenticated.value = false
 }
 function notify(message) { toast.value = message; window.setTimeout(() => { toast.value = '' }, 2800) }
@@ -326,14 +328,13 @@ function handleDashboardAction(event) {
 let refreshTimer
 onMounted(() => {
   document.addEventListener('click', handleDashboardAction)
-  fetch('/api/auth/user', { credentials: 'same-origin' }).then((response) => {
-    authenticated.value = response.ok
-    checkingAuth.value = false
-    if (authenticated.value) {
-      loadDashboard()
-      refreshTimer = window.setInterval(loadDashboard, 30000)
-    }
-  })
+  const demoAuth = window.localStorage.getItem('signaldesk-demo-auth') === 'true'
+  authenticated.value = demoAuth
+  checkingAuth.value = false
+  if (authenticated.value) {
+    loadDashboard()
+    refreshTimer = window.setInterval(loadDashboard, 30000)
+  }
 })
 onUnmounted(() => {
   window.clearInterval(refreshTimer)
