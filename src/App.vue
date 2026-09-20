@@ -7,6 +7,9 @@ import {
   Users, X,
 } from 'lucide-vue-next'
 
+const apiBaseUrl = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '')
+const fetch = (path, options = {}) => window.fetch(`${apiBaseUrl}${path}`, { ...options, credentials: 'include' })
+
 const activeView = ref('Overview')
 const authenticated = ref(false)
 const checkingAuth = ref(true)
