@@ -33,6 +33,7 @@ const showGroupForm = ref(false)
 const groupForm = ref({ name: '', description: '' })
 const settings = ref({ pollingInterval: 30, notifications: true, compactMode: false })
 const demoCredentials = { email: 'test@example.com', password: 'password' }
+const isDemoMode = () => window.localStorage.getItem('signaldesk-demo-auth') === 'true'
 const navItems = [
   { label: 'Overview', icon: LayoutDashboard }, { label: 'Devices', icon: Server, count: 'devices' },
   { label: 'Alerts', icon: Bell, count: 'alerts', alert: true }, { label: 'Reports', icon: Activity },
@@ -242,6 +243,14 @@ async function loadDashboard() {
     }))
     apiError.value = ''
   } catch (error) {
+    const savedDevices = window.localStorage.getItem('signaldesk-demo-devices')
+    if (savedDevices) {
+      devices.value = JSON.parse(savedDevices).map((device) => ({
+        ...device,
+        icon: device.type?.toLowerCase().includes('server') ? Server : Network,
+        tone: device.type?.toLowerCase().includes('server') ? 'blue' : 'teal',
+      }))
+    }
     apiError.value = 'Live data is unavailable. Showing the last known dashboard state.'
   }
 }
@@ -275,6 +284,24 @@ function addDevice() { showDeviceForm.value = true }
 async function submitDevice() {
   savingDevice.value = true
   try {
+    if (isDemoMode()) {
+      const localDevice = {
+        ...deviceForm.value,
+        id: `local-${Date.now()}`,
+        ip: deviceForm.value.ip_address,
+        status: 'online',
+        statusLabel: 'Operational',
+        uptime: '100.00%',
+        latency: deviceForm.value.latency_ms ? `${deviceForm.value.latency_ms} ms` : '--',
+        updated: 'Just now',
+      }
+      devices.value = [localDevice, ...devices.value]
+      window.localStorage.setItem('signaldesk-demo-devices', JSON.stringify(devices.value.map(({ icon, ...device }) => device)))
+      showDeviceForm.value = false
+      deviceForm.value = { name: '', type: '', ip_address: '', latency_ms: null }
+      notify('Device registered locally')
+      return
+    }
     const response = await fetch('/api/devices', { method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/json' }, body: JSON.stringify(deviceForm.value) })
     if (!response.ok) throw new Error('Device registration failed')
     showDeviceForm.value = false
@@ -328,7 +355,7 @@ function handleDashboardAction(event) {
 let refreshTimer
 onMounted(() => {
   document.addEventListener('click', handleDashboardAction)
-  const demoAuth = window.localStorage.getItem('signaldesk-demo-auth') === 'true'
+  const demoAuth = isDemoMode()
   authenticated.value = demoAuth
   checkingAuth.value = false
   if (authenticated.value) {
@@ -347,7 +374,7 @@ onUnmounted(() => {
   <div v-else-if="!authenticated" class="login-screen"><form class="login-card" @submit.prevent="login"><div class="brand-mark"><Activity :size="20" :stroke-width="2.4" /></div><div class="eyebrow">ICT infrastructure</div><h1>Welcome back</h1><p>Sign in to monitor your campus systems.</p><label>Email<input v-model="loginForm.email" type="email" required autocomplete="email" /></label><label>Password<input v-model="loginForm.password" type="password" required autocomplete="current-password" /></label><p v-if="loginError" class="api-error">{{ loginError }}</p><button class="primary-btn" type="submit">Sign in</button></form></div>
   <div v-else class="app-shell">
     <aside class="sidebar" :class="{ 'sidebar-open': mobileMenuOpen }">
-      <div class="brand-row"><div class="brand-mark"><Activity :size="20" :stroke-width="2.4" /></div><div><strong>signal<span>desk</span></strong><small>ICT infrastructure</small></div><button class="icon-btn mobile-close" aria-label="Close menu" @click="mobileMenuOpen = false"><X :size="18" /></button></div>
+      <div class="brand-row"><div class="brand-mark"><Activity :size="20" :stroke-width="2.4" /></div><div><strong>signal<span>desk</span></strong><small>ICT infrastructure</small></div><button type="button" class="icon-btn mobile-close" aria-label="Close menu" @click.stop="mobileMenuOpen = false"><X :size="18" /></button></div>
       <div class="workspace-switcher"><div class="campus-avatar">FP</div><div><small>Workspace</small><strong>Federal Polytechnic</strong></div><ChevronDown :size="16" /></div>
       <nav class="nav-list" aria-label="Main navigation"><p class="nav-label">Monitor</p><button v-for="item in navItems" :key="item.label" class="nav-item" :class="{ active: activeView === item.label }" @click="selectView(item.label)"><component :is="item.icon" :size="18" /><span>{{ item.label }}</span><em v-if="item.count" :class="{ 'count-alert': item.alert }">{{ item.count === 'devices' ? summary.total_devices : String(summary.open_alerts).padStart(2, '0') }}</em></button><p class="nav-label second-label">Manage</p><button class="nav-item" :class="{ active: activeView === 'Device groups' }" @click="selectView('Device groups')"><SlidersHorizontal :size="18" /><span>Device groups</span></button><button class="nav-item" :class="{ active: activeView === 'Team access' }" @click="selectView('Team access')"><Users :size="18" /><span>Team access</span></button></nav>
       <div class="sidebar-bottom"><div class="help-box"><CircleHelp :size="18" /><div><strong>Need a hand?</strong><small>Read the operator guide</small></div><ArrowUpRight :size="15" /></div><button class="nav-item"><Settings :size="18" /><span>Settings</span></button><button class="nav-item" @click="logout"><LogOut :size="18" /><span>Sign out</span></button><div class="profile"><div class="profile-avatar">DO</div><div><strong>Daniel O.</strong><small>Administrator</small></div><MoreHorizontal :size="17" /></div></div>
