@@ -32,6 +32,8 @@ const team = ref([])
 const showGroupForm = ref(false)
 const groupForm = ref({ name: '', description: '' })
 const settings = ref({ pollingInterval: 30, notifications: true, compactMode: false })
+const currentSchool = ref(window.localStorage.getItem('signaldesk-school') || 'Federal Polytechnic')
+const schools = ['Federal Polytechnic', 'Niger State Polytechnic', 'Kaduna Polytechnic']
 const demoCredentials = { email: 'test@example.com', password: 'password' }
 const isDemoMode = () => window.localStorage.getItem('signaldesk-demo-auth') === 'true'
 const navItems = [
@@ -57,6 +59,14 @@ async function selectView(view) {
   if (view === 'Team access') await loadTeam()
   if (view === 'Settings') loadSettings()
 }
+function switchSchool() {
+  const nextSchool = schools[(schools.indexOf(currentSchool.value) + 1) % schools.length]
+  currentSchool.value = nextSchool
+  window.localStorage.setItem('signaldesk-school', nextSchool)
+  notify(`Workspace changed to ${nextSchool}`)
+}
+function openProfile() { activeView.value = 'Profile'; mobileMenuOpen.value = false }
+function openNotifications() { activeView.value = 'Alerts'; mobileMenuOpen.value = false }
 function loadSettings() {
   const savedSettings = window.localStorage.getItem('signaldesk-settings')
   if (savedSettings) settings.value = { ...settings.value, ...JSON.parse(savedSettings) }
@@ -140,6 +150,10 @@ async function loadTeam() {
   if (response.ok) {
     team.value = await response.json()
     window.setTimeout(renderTeam, 0)
+  } else if (isDemoMode()) {
+    const savedTeam = window.localStorage.getItem('signaldesk-demo-team')
+    team.value = savedTeam ? JSON.parse(savedTeam) : [{ id: 'local-admin', name: 'Suleiman', email: 'suleiman@example.com', role: 'administrator' }]
+    window.setTimeout(renderTeam, 0)
   }
 }
 function renderTeam() {
@@ -158,6 +172,13 @@ function renderTeam() {
     const name = window.prompt('Member name')
     const email = window.prompt('Member email')
     if (!name?.trim() || !email?.trim()) return
+    if (isDemoMode()) {
+      team.value = [...team.value, { id: `local-${Date.now()}`, name: name.trim(), email: email.trim(), role: 'operator' }]
+      window.localStorage.setItem('signaldesk-demo-team', JSON.stringify(team.value))
+      notify('Team member added locally')
+      renderTeam()
+      return
+    }
     const response = await fetch('/api/team', { method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/json' }, body: JSON.stringify({ name: name.trim(), email: email.trim(), password: 'temporary-password', role: 'operator' }) })
     if (!response.ok) {
       notify('Member could not be invited')
@@ -325,6 +346,12 @@ async function manageDevice(device) {
     notify('Device updated')
   }
   if (action === 'delete' && window.confirm(`Delete ${device.name}?`)) {
+    if (isDemoMode()) {
+      devices.value = devices.value.filter((item) => item.id !== device.id && item.name !== device.name)
+      window.localStorage.setItem('signaldesk-demo-devices', JSON.stringify(devices.value.map(({ icon, ...item }) => item)))
+      notify('Device deleted locally')
+      return
+    }
     const response = await fetch(`/api/devices/${device.id}`, { method: 'DELETE', headers: { Accept: 'application/json' } })
     if (!response.ok) return notify('Device could not be deleted')
     await loadDashboard()
@@ -375,15 +402,15 @@ onUnmounted(() => {
   <div v-else class="app-shell">
     <aside class="sidebar" :class="{ 'sidebar-open': mobileMenuOpen }">
       <div class="brand-row"><div class="brand-mark"><Activity :size="20" :stroke-width="2.4" /></div><div><strong>signal<span>desk</span></strong><small>ICT infrastructure</small></div><button type="button" class="icon-btn mobile-close" aria-label="Close menu" @click.stop="mobileMenuOpen = false"><X :size="18" /></button></div>
-      <div class="workspace-switcher"><div class="campus-avatar">FP</div><div><small>Workspace</small><strong>Federal Polytechnic</strong></div><ChevronDown :size="16" /></div>
+      <button class="workspace-switcher" type="button" @click="switchSchool"><div class="campus-avatar">{{ currentSchool.slice(0, 2).toUpperCase() }}</div><div><small>Workspace</small><strong>{{ currentSchool }}</strong></div><ChevronDown :size="16" /></button>
       <nav class="nav-list" aria-label="Main navigation"><p class="nav-label">Monitor</p><button v-for="item in navItems" :key="item.label" class="nav-item" :class="{ active: activeView === item.label }" @click="selectView(item.label)"><component :is="item.icon" :size="18" /><span>{{ item.label }}</span><em v-if="item.count" :class="{ 'count-alert': item.alert }">{{ item.count === 'devices' ? summary.total_devices : String(summary.open_alerts).padStart(2, '0') }}</em></button><p class="nav-label second-label">Manage</p><button class="nav-item" :class="{ active: activeView === 'Device groups' }" @click="selectView('Device groups')"><SlidersHorizontal :size="18" /><span>Device groups</span></button><button class="nav-item" :class="{ active: activeView === 'Team access' }" @click="selectView('Team access')"><Users :size="18" /><span>Team access</span></button></nav>
-      <div class="sidebar-bottom"><div class="help-box"><CircleHelp :size="18" /><div><strong>Need a hand?</strong><small>Read the operator guide</small></div><ArrowUpRight :size="15" /></div><button class="nav-item"><Settings :size="18" /><span>Settings</span></button><button class="nav-item" @click="logout"><LogOut :size="18" /><span>Sign out</span></button><div class="profile"><div class="profile-avatar">DO</div><div><strong>Daniel O.</strong><small>Administrator</small></div><MoreHorizontal :size="17" /></div></div>
+      <div class="sidebar-bottom"><div class="help-box"><CircleHelp :size="18" /><div><strong>Need a hand?</strong><small>Read the operator guide</small></div><ArrowUpRight :size="15" /></div><button class="nav-item" @click="selectView('Settings')"><Settings :size="18" /><span>Settings</span></button><button class="nav-item" @click="logout"><LogOut :size="18" /><span>Sign out</span></button><button class="profile" type="button" @click="openProfile"><div class="profile-avatar">SU</div><div><strong>Suleiman</strong><small>Administrator</small></div><MoreHorizontal :size="17" /></button></div>
     </aside>
     <div v-if="mobileMenuOpen" class="sidebar-backdrop" @click="mobileMenuOpen = false"></div>
     <main class="main-content">
-      <header class="topbar"><button class="icon-btn menu-toggle" aria-label="Open menu" @click="mobileMenuOpen = true"><Menu :size="21" /></button><div class="breadcrumb"><span>Workspace</span><b>/</b><strong>{{ activeView }}</strong></div><div class="top-actions"><button class="icon-btn" aria-label="Help"><CircleHelp :size="19" /></button><button class="icon-btn notification" aria-label="Notifications"><Bell :size="19" /><i></i></button><div class="mini-avatar">DO</div></div></header>
+      <header class="topbar"><button class="icon-btn menu-toggle" aria-label="Open menu" @click="mobileMenuOpen = true"><Menu :size="21" /></button><div class="breadcrumb"><span>Workspace</span><b>/</b><strong>{{ activeView }}</strong></div><div class="top-actions"><button class="icon-btn" aria-label="Help"><CircleHelp :size="19" /></button><button class="icon-btn notification" aria-label="Notifications" @click="openNotifications"><Bell :size="19" /><i></i></button><button class="mini-avatar" type="button" @click="openProfile">SU</button></div></header>
       <div class="content-wrap">
-        <section class="page-heading"><div><div class="eyebrow"><span class="pulse-dot"></span> Live environment <span class="dot-separator">·</span> Last synced just now</div><h1>Good morning, Daniel.</h1><p>Here’s the health of your infrastructure across campus.</p><p v-if="apiError" class="api-error">{{ apiError }}</p></div><button class="primary-btn" @click="addDevice"><Plus :size="17" /> Register device</button></section>
+        <section class="page-heading"><div><div class="eyebrow"><span class="pulse-dot"></span> Live environment <span class="dot-separator">·</span> Last synced just now</div><h1>Good morning, Suleiman.</h1><p>Here’s the health of your infrastructure across campus.</p><p v-if="apiError" class="api-error">{{ apiError }}</p></div><button class="primary-btn" @click="addDevice"><Plus :size="17" /> Register device</button></section>
         <section v-if="activeView !== 'Overview'" class="view-panel"><div class="view-panel-heading"><div><div class="eyebrow"><span class="pulse-dot"></span> Workspace view</div><h2>{{ activeView }}</h2><p>{{ activeView === 'Devices' ? 'Manage registered infrastructure and review current health.' : activeView === 'Alerts' ? 'Review and resolve active infrastructure issues.' : activeView === 'Reports' ? 'Operational reporting from the current monitoring snapshot.' : activeView === 'Device groups' ? 'Organize devices by campus area, service, or ownership.' : 'Control workspace members and their access levels.' }}</p></div><button v-if="activeView === 'Devices'" class="primary-btn" @click="addDevice"><Plus :size="17" /> Register device</button></div><div v-if="activeView === 'Devices'" class="view-list"><div v-for="device in devices" :key="device.id || device.name" class="view-list-row"><div><strong>{{ device.name }}</strong><small>{{ device.type }} · {{ device.ip }}</small></div><span class="status-pill" :class="device.status"><i></i>{{ device.statusLabel }}</span><strong>{{ device.latency }}</strong></div></div><div v-else-if="activeView === 'Alerts'" class="view-list"><div v-for="alert in alerts" :key="alert.id" class="view-list-row"><div><strong>{{ alert.message }}</strong><small>{{ alert.device }} · {{ alert.created_at }}</small></div><span class="status-pill warning"><i></i>{{ alert.severity }}</span></div><div v-if="!alerts.length" class="empty-state">No open alerts.</div></div><div v-else-if="activeView === 'Reports' && report" class="report-content"><div class="report-toolbar"><select v-model="reportRange" @change="loadReport" aria-label="Report period"><option value="24h">Last 24 hours</option><option value="7d">Last 7 days</option><option value="30d">Last 30 days</option></select><button class="secondary-btn" @click="exportReport">Export CSV</button></div><div class="report-grid"><div class="report-stat"><span>Availability</span><strong>{{ report.summary.availability }}%</strong></div><div class="report-stat"><span>Average latency</span><strong>{{ report.summary.average_latency_ms }} ms</strong></div><div class="report-stat"><span>Open alerts</span><strong>{{ report.summary.open_alerts }}</strong></div><div class="report-stat"><span>Total devices</span><strong>{{ report.summary.total_devices }}</strong></div></div><div class="report-breakdown"><div><h3>Device availability</h3><p>Online {{ report.status_breakdown.online }} · Degraded {{ report.status_breakdown.warning }} · Offline {{ report.status_breakdown.offline }}</p></div><div><h3>Alert severity</h3><p>High {{ report.alert_breakdown.high }} · Medium {{ report.alert_breakdown.medium }} · Low {{ report.alert_breakdown.low }}</p></div></div></div><div v-else class="empty-state">{{ activeView }} is ready for configuration.</div></section>
         <section v-else class="stats-grid"><article class="stat-card"><div class="stat-top"><span class="stat-icon teal-bg"><ShieldCheck :size="18" /></span><span class="trend up">+0.4%</span></div><div class="stat-value">{{ summary.network_uptime }}<span>%</span></div><div class="stat-label">Network uptime <span>vs last 30 days</span></div><div class="sparkline teal-line"><svg viewBox="0 0 220 42" preserveAspectRatio="none"><path d="M0 32 C12 30, 15 25, 28 29 S44 31, 54 20 S67 24, 80 19 S95 20, 105 14 S117 18, 128 12 S142 16, 153 9 S167 13, 178 7 S192 8, 220 3" /></svg></div></article><article class="stat-card"><div class="stat-top"><span class="stat-icon blue-bg"><Server :size="18" /></span><span class="trend neutral">of {{ summary.total_devices }} devices</span></div><div class="stat-value">{{ summary.operational_devices }} <span class="fraction">/ {{ summary.total_devices }}</span></div><div class="stat-label">Systems operational <span>{{ summary.total_devices - summary.operational_devices }} need attention</span></div><div class="progress"><span :style="{ width: `${summary.total_devices ? summary.operational_devices / summary.total_devices * 100 : 0}%` }"></span></div></article><article class="stat-card"><div class="stat-top"><span class="stat-icon amber-bg"><AlertTriangle :size="18" /></span><span class="trend down">requiring attention</span></div><div class="stat-value">{{ String(summary.open_alerts).padStart(2, '0') }}</div><div class="stat-label">Open alerts <span>requiring attention</span></div><div class="alert-bars"><i></i><i></i><i></i><i class="muted"></i><i class="muted"></i></div></article><article class="stat-card"><div class="stat-top"><span class="stat-icon violet-bg"><Gauge :size="18" /></span><span class="trend up">live average</span></div><div class="stat-value">{{ summary.average_latency_ms }} <span class="unit">ms</span></div><div class="stat-label">Average response <span>across all devices</span></div><div class="response-line"><span style="width: 34%"></span></div></article></section>
         <section class="section-heading"><div><h2>Infrastructure status</h2><p>Real-time view of registered devices and services</p></div><div class="table-tools"><div class="search-box"><Search :size="16" /><input v-model="search" type="search" placeholder="Search devices..." /></div><select v-model="filter" aria-label="Filter devices"><option>All systems</option><option>Operational</option><option>Degraded</option><option>Unreachable</option></select><button class="icon-btn filter-btn" aria-label="More filters"><ListFilter :size="17" /></button></div></section>
